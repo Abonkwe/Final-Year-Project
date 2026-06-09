@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual Environments (Crucial to ignore)
+.venv/
+venv/
+ENV/
+env/
+ENV/
+
+# Environment variables and secrets (Never commit your keys!)
+.env
+.env.local
+.env.*
+*.env
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Testing and Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.nosenv/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
