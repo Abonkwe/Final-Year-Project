@@ -1,8 +1,7 @@
 from fastapi import HTTPException, status
-from my_wallet.services.supabase_client import supabase_client
+from my_wallet.services.supabase_client import supabase_client as supabase
 from my_wallet.models.schemas import P2PTransferRequest
-
-
+from typin
 
 class LedgerService:
 
@@ -16,81 +15,117 @@ class LedgerService:
         # ---------------------------------------------------------------------
         # STEP 1: FETCH THE SENDER RECORD
         # ---------------------------------------------------------------------
-        # TODO: Query the 'profiles' table where 'phone_number' matches the sender's phone.
-        # HINT: Use Supabase's inner join syntax to select the profile ID AND its
-        # related nested wallet data (id and balance) in a single query block.
-        # Ensure you call .single().execute() to get a single row dictionary.
+        sender = (
+            supabase.table("profiles").select("id, wallets(wallet_id, balance)").eq("phone_number",payload.sender_phone).execute()
+        )
 
+        if not sender.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sender profile not found")
 
-        # TODO: Check if the sender record exists. If it does not exist,
-        # raise an HTTPException with a 404 Not Found status code.
+        # Extract the first matching row from the returned data list
+        sender_data = sender.data[0]
 
         # ---------------------------------------------------------------------
         # STEP 2: ENFORCE THE BALANCE INVARIANT
         # ---------------------------------------------------------------------
-        # TODO: Extract the sender's wallet ID and current balance from your query result.
-        # TODO: Compare the current balance against the requested transfer amount.
-        # If the balance is less than the amount, raise an HTTPException with a
-        # 400 Bad Request status code stating "Insufficient wallet funds".
+        sender_wallet_id = sender_data["wallets"]["wallet_id"]
+        sender_balance = float(sender_data["wallets"]["balance"])
+
+        # Check total cost (amount + charges) against current available balance
+        if sender_balance < (payload.amount + payload.charges):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"The amount you want to send exceeds your current wallet balance\nBalance{sender_balance}"
+            )
 
         # ---------------------------------------------------------------------
         # STEP 3: FETCH THE RECIPIENT RECORD
         # ---------------------------------------------------------------------
-        # TODO: Repeat the query tracking from Step 1, but this time search for the
-        # profile where 'phone_number' matches the receiver's phone.
+        receiver = (
+            supabase.table("profiles").select("id, wallets(wallet_id, balance)").eq("phone_number",payload.receiver_phone).execute()
+        )
 
-        # TODO: Check if the receiver record exists. If it does not exist,
-        # raise an HTTPException with a 404 Not Found status code.
+        if not receiver.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient profile not found")
+
+        # Extract the first matching row from the returned data list
+        receiver_data = receiver.data[0]
+        receiver_wallet_id = receiver_data["wallets"]["wallet_id"]
+        receiver_balance = float(receiver_data["wallets"]["balance"])
 
         # ---------------------------------------------------------------------
         # STEP 4: ENFORCE BUSINESS INTEGRITY CHECKS
         # ---------------------------------------------------------------------
-        # TODO: Extract the receiver's profile ID and wallet ID.
-        # TODO: Verify that the sender's profile ID is NOT equal to the receiver's profile ID.
-        # If they match, raise an HTTPException (400 Bad Request) to block self-transfers.
+        if sender_data["id"] == receiver_data["id"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot send money to yourself")
 
         # ---------------------------------------------------------------------
         # STEP 5: CALCULATE NEW BALANCES
         # ---------------------------------------------------------------------
-        # TODO: Compute the math variables:
-        # - Subtract the transfer amount from the sender's current balance.
-        # - Add the transfer amount to the receiver's current balance.
+        charges: float = payload.amount * 0.02
+        sender_new_balance = sender_balance - (payload.amount + charges)
+        receiver_new_balance = receiver_balance + payload.amount
 
         # ---------------------------------------------------------------------
         # STEP 6: ATOMIC LEDGER MUTATION (THE DANGEROUS ZONE)
         # ---------------------------------------------------------------------
-        # TODO: Wrap the following database mutations inside a try/except block
-        # to catch any network drops or backend data writing failures.
         try:
-        # A. Log the initial transaction row:
-        # TODO: Insert a row into the 'transactions' table with sender_id,
-        # receiver_id, the amount, and a status explicitly marked as "PENDING".
-        # Grab the generated transaction ID from the insertion response metadata.
+            # A. Log the initial transaction row as PENDING
+            txn_res = supabase.table("transactions").insert({
+                "sender_id": sender_data["id"],
+                "receiver_id": receiver_data["id"],
+                "amount": payload.amount,
+                "charges": charges,
+                "status": "PENDING"
+            }).execute()
 
-        # B. Deduct money from the Sender:
-        # TODO: Update the 'wallets' table, setting the 'balance' to the new sender
-        # balance, filtering where 'id' matches the sender's wallet ID.
+            transaction_id = txn_res.data[0]["transaction_id"]
 
-        # C. Credit money to the Receiver:
-        # TODO: Update the 'wallets' table, setting the 'balance' to the new receiver
-        # balance, filtering where 'id' matches the receiver's wallet ID.
+            # B. Deduct money from the Sender's wallet
+            supabase.table("wallets").update({"balance": sender_new_balance}).eq("wallet_id", sender_wallet_id).execute()
 
-        # D. Commit State to Success:
-        # TODO: Update the 'transactions' table, altering the 'status' column
-        # from "PENDING" to "SUCCESS" for this transaction ID.
+            # C. Credit money to the Receiver's wallet
+            supabase.table("wallets").update({"balance": receiver_new_balance}).eq("wallet_id", receiver_wallet_id).execute()
 
-        # E. Complete the Lifecycle Response:
-        # TODO: Return a successful payload dictionary containing:
-        # {"status": "success", "transaction_id": ... , "message": ...}
+            # D. Commit State to SUCCESS
+            supabase.table("transactions").update({"status": "SUCCESS"}).eq("transaction_id", transaction_id).execute()
 
-        except Exception as error:
+            # E. Complete the Lifecycle Response
+            return {
+                "status": "success",
+                "transaction_id": transaction_id,
+                "message": f"Successfully transferred {payload.amount} XAF to {payload.receiver_phone}."
+            }
+
+        except Exception as database_error:
             # ---------------------------------------------------------------------
             # STEP 7: CLEANUP ON ERROR
             # ---------------------------------------------------------------------
-            # TODO: Check if the transaction ID was already generated in the try block.
-            # If it exists, execute an update query on the 'transactions' table to set
-            # its status to "FAILED" so your ledger record is mathematically accurate.
+            if 'transaction_id' in locals():
+                supabase.table("transactions").update({"status": "FAILED"}).eq("id", transaction_id).execute()
 
-            # TODO: Finally, raise a clean HTTPException with a status code of
-            # 500 Internal Server Error, passing the raw error details as a string description.
-            pass
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Ledger compilation failure: {str(database_error)}"
+            )
+
+    @staticmethod
+    def get_user_transaction_history(user_id: str)->list:
+        """
+
+        :param user_id:
+        :return:
+        """
+        try:
+            response = supabase.table("transactions") \
+                .select("*") \
+                .or_(f"sender_id.eq.{user_id},receiver_id.eq.{user_id}") \
+                .order("created_at", descending=True) \
+                .execute()
+
+            return response.data
+        except Exception as e:
+            raise HTTPException(
+                status_code = status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail = f"Failed to retrieve ledger history: {str(e)}"
+            )

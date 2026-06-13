@@ -1,4 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
+from datetime import datetime
 
 class UserSignupRequest(BaseModel):
     """
@@ -23,4 +24,17 @@ class P2PTransferRequest(BaseModel):
     """
     sender_phone: str = Field(..., description="Routing phone number of the wallet initiating the transfer")
     receiver_phone: str = Field(..., description="Routing phone number of the target recipient wallet")
-    amount: float = Field(..., gt=0.00, description="Transaction amount must be strictly greater than zero")
+    amount: float = Field(..., gt=0.00,  description="Transaction amount must be strictly greater than zero")
+    # charges: float = Field(..., gt=0.00, description="Charges for this transaction")
+
+class TransactionHistoryResponse(BaseModel):
+    transaction_id: str
+    sender_id: str
+    receiver_id: str
+    amount: float
+    charges: float
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
