@@ -26,3 +26,47 @@ Traditional payment architectures struggle with infrastructural "dead zones" and
 ## 🏗️ Architecture & Tech Stack
 
 The application relies on a **Three-Tier Architecture** ensuring clean separation of presentation, validation, and data storage layers[cite: 1].
+
+### Technical Toolkit
+*   **Backend Application:** **FastAPI (Python 3.10+)** for ultra-fast asynchronous JSON request routing and automatic OpenAPI documentation[cite: 1].
+*   **Frontend Mobile Environment:** **React Native & Expo Ecosystem** utilizing TypeScript for a unified Android/iOS codebase native experience[cite: 1].
+*   **Database Management System:** **PostgreSQL (Hosted on Supabase)** to enforce strict transactional ACID principles and isolate atomic P2P data states[cite: 1].
+*   **Dependency Management:** **`uv` (Astral Software)** as a lightning-fast virtual environment manager utilizing exact lockfiles for reproducible builds[cite: 1].
+
+---
+
+## 📊 Database Design & Ledger Assertions
+
+To guarantee complete ledger accuracy and avoid negative balances, the system applies strict check constraints directly at the database level[cite: 1]:
+
+| Schema Identifier | Field Matrix Elements & Typing | Operational Rule & Constraint Assertions |
+| :--- | :--- | :--- |
+| **`profiles`** | `id (UUID, PK)`, `full_name (TEXT)`, `phone_number (VARCHAR, UNIQUE)` | Enforces user identification. The unique phone index maps direct peer routes[cite: 1]. |
+| **`wallets`** | `id (UUID, PK)`, `user_id (FK)`, `balance (NUMERIC(12,2))`, `currency` | Tracks user assets. Employs a database check constraint ensuring `balance >= 0.00` to completely block overdraft errors[cite: 1]. |
+| **`transactions`** | `id (UUID, PK)`, `sender_id (FK)`, `receiver_id (FK)`, `amount`, `status` | Logs financial operations. Enforces a database check constraint requiring `amount > 0.00` to block faulty or negative adjustments[cite: 1]. |
+
+---
+
+## ⚙️ Getting Started
+
+### Prerequisites
+*   **Development Rig:** Minimum Intel i5 (or equivalent), 8GB+ RAM (16GB recommended for containers), 40GB free SSD space[cite: 1].
+*   **Mobile Target:** Android 10.0+ / iOS 15.0+[cite: 1].
+*   Python 3.10+ installed locally[cite: 1].
+*   Node.js installed (LTS recommended)[cite: 1].
+
+### 1. Backend Setup (FastAPI)
+Navigate to the backend directory and use `uv` to construct your isolated environment[cite: 1]:
+```bash
+cd backend
+
+# Install dependencies using uv
+uv venv
+source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
+uv pip install -r requirements.txt
+
+# Configure your environment variables (.env)
+cp .env.example .env
+
+# Fire up the asynchronous development server
+python main.py
