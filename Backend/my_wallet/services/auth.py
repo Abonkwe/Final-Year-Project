@@ -31,7 +31,8 @@ class AuthService:
 
             # Connect a brand new local currency wallet to this user account
             supabase.table("wallets").insert({
-                "wallet_id": user_id,
+                # "wallet_id": user_id,
+                "user_id": user_id,
                 "balance": 1000.00,
                 "currency": "XAF"
             }).execute()

@@ -1,7 +1,7 @@
 from fastapi import HTTPException, status
 from my_wallet.services.supabase_client import supabase_client as supabase
 from my_wallet.models.schemas import P2PTransferRequest
-from typin
+
 
 class LedgerService:
 

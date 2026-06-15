@@ -15,7 +15,7 @@ class UserLoginRequest(BaseModel):
     Validates inbound credentials during session authentication requests.
     """
     email: EmailStr = Field(..., description="Registered system email address")
-    phone_number: str = Field( min_length=9, max_length=9, description="Registered system password")
+    # phone_number: str = Field( min_length=9, max_length=9, description="Registered system password")
     password: str = Field(..., description="Account verification password")
 
 class P2PTransferRequest(BaseModel):
