@@ -1,52 +1,28 @@
-* **Decoupled Infrastructure:** The client interface is entirely separated from backend operations, interacting strictly over a versioned REST API.
-* **Data Integrity Guardrails:** The ledger implements sequential transactional sequence handling with comprehensive cleanup rollbacks to completely eliminate orphaned state anomalies across tables.
-* **Cryptographic Sovereignty:** Employs stateless token-based identity verification via JSON Web Tokens (JWT) signed with `HS256`, completely replacing memory-intensive traditional sessions.
+# Digital Payment and Wallet System
+
+[![Python Backend](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Mobile Frontend](https://img.shields.io/badge/Frontend-React_Native_%2F_Expo-61DAFB?style=flat-square&logo=react&logoColor=black)](https://reactnative.dev/)
+[![Database](https://img.shields.io/badge/Database-PostgreSQL_%2F_Supabase-336791?style=flat-square&logo=postgresql&logoColor=white)](https://supabase.com/)
+
+A secure, high-concurrency, **offline-first** Peer-to-Peer (P2P) digital wallet mobile application tailored for the Cameroonian economic ecosystem. Developed as a final year project for the Bachelor of Science in Computer Science at the **University of Buea**.
+
+This repository corresponds directly to the implementations detailed in the **"Abonkwe Princely (SC23A522) report.docx"** graduation document.
 
 ---
 
-## 🛠 Tech Stack
+## 📌 Project Overview
 
-* **Backend Engine:** FastAPI (Python 3.10+)
-* **Asynchronous Server Gateway:** Uvicorn
-* **Database & Cloud Security:** Supabase (PostgreSQL engine)
-* **Data Modeling & Compliance:** Pydantic v2
-* **Network Access Control:** CORS Middleware Engine
+Traditional payment architectures struggle with infrastructural "dead zones" and network fluctuations in Cameroon, often causing anxiety over double-spending and missing transaction details. This system bridges that gap by implementing a robust, local caching layer for seamless **offline visibility** alongside an **asynchronous backend** engineered to survive real-world connection drops gracefully.
 
----
-
-## 📋 Database Entity-Relationship Layout (ERD)
-
-The database enforces a strict, production-standard 1:1:Many relational constraint pipeline utilizing type-safe Universally Unique Identifiers (`UUID`) across all matching keys:
-
-1.  **`auth.users` (Internal Vault):** Managed natively by Supabase Auth. Securely hashes registration passwords. Generates the base account `UUID`.
-2.  **`public.profiles`:** Connects 1:1 with `auth.users.id`. Enforces data integrity through user-facing metadata attributes.
-3.  **`public.wallets`:** Main identity wallet account tracker. Maps 1:1 to `profiles.id` through a foreign key constraint combined with a strict `UNIQUE` column clause, preventing duplicate wallets per profile. Auto-seeds with a `1000.00 XAF` sign-up credit.
-4.  **`public.transactions`:** The system's central immutable financial ledger. Records sender and receiver reference UUIDs, precise currency figures, and timestamps for comprehensive auditing.
+### Core Features
+*   **Wallet Management:** Real-time balance updates and extensive logs documenting successful, pending, or failed operations.
+*   **Atomic P2P Transfers:** Secure fund transfers directly between users using encrypted token pathways.
+*   **Offline-First Visibility:** Local data persistence allows users to view cached transaction histories and balances without an active internet connection[cite: 1].
+*   **Robust Security:** Strict Multi-Factor Authentication (MFA) / PIN validation pipelines with backend Row-Level Security (RLS)[cite: 1].
+*   **Local Payment Gateway Integration:** Configured to handle webhooks from local aggregators like Fapshi and NkwaPay[cite: 1].
 
 ---
 
-## 🛣 Core REST API Endpoints
+## 🏗️ Architecture & Tech Stack
 
-All network request and response pathways are organized cleanly behind a versioned prefix (`/api/v1`):
-
-### 📁 Authentication Layer
-* `POST /api/v1/auth/signup` - Validates inbound payload shapes, creates an encrypted auth profile, provisions public records, and safely attaches an empty currency wallet. Implements automated cascade rollback in case of downstream validation faults.
-* `POST /api/v1/auth/login` - Authenticates user credentials against the secure cryptographic vault and generates a stateless session JWT access token.
-
-### 📁 Financial Transfers Layer
-* `POST /api/v1/transfers/` - Coordinates atomic P2P fund movements. Runs balance inquiries, handles fee deductions, and commits immutable ledger rows to prevent account overdrafts.
-* `GET /api/v1/transfers/history/{user_id}` - Scans the transaction table simultaneously using an logical `OR` condition, compiling a unified, reverse-chronological list of a user's incoming and outgoing transfers.
-
-### 📁 System Diagnostics
-* `GET /` - Root lightweight health status diagnostics payload.
-
----
-
-## ⚙️ Installation & Development Setup
-
-Follow these steps to run this logic engine locally on your machine:
-
-### 1. Clone the Workspace
-```bash
-git clone [https://github.com/your-username/my_wallet.git](https://github.com/your-username/my_wallet.git)
-cd my_wallet
+The application relies on a **Three-Tier Architecture** ensuring clean separation of presentation, validation, and data storage layers[cite: 1].
