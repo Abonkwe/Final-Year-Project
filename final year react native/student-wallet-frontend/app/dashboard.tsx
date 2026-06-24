@@ -1,126 +1,254 @@
 
 
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { Link, useRouter } from 'expo-router';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { LogOut, Send, RefreshCw, History, CreditCard } from 'lucide-react-native';
 import api from './_services/api';
 
-export default function LoginScreen() {
+export default function DashboardScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [userId, setUserId] = useState<string>('');
+  const [userName, setUserName] = useState<string>('');
+  const [userPhone, setUserPhone] = useState<string>('');
+  const [balance, setBalance] = useState<number>(0.0);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [recipientPhone, setRecipientPhone] = useState<string>('');
+  const [transferAmount, setTransferAmount] = useState<string>('');
+  const [transferring, setTransferring] = useState<boolean>(false);
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Validation Error', 'Please enter both email and password.');
-      return;
-    }
-
-    const emailRegex = /^[^s@]+@[^s@]+.[^s@]+$/;
-    if (!emailRegex.test(email)) {
-      Alert.alert('Validation Error', 'Please provide a valid email address.');
-      return;
-    }
-
-    setLoading(true);
+  const loadLocalUser = async () => {
     try {
-      const response = await api.post('/auth/login', {
-        email: email.trim(),
-        password: password,
-      });
+      const storedId = await AsyncStorage.getItem('userId');
+      const storedName = await AsyncStorage.getItem('userName');
+      const storedPhone = await AsyncStorage.getItem('userPhone');
+      const storedBalance = await AsyncStorage.getItem('userBalance');
 
-      const { token, user } = response.data;
-      
-      // Persist values in AsyncStorage
-      await AsyncStorage.setItem('userToken', token);
-      await AsyncStorage.setItem('userId', user.id);
-      await AsyncStorage.setItem('userName', user.fullName);
-      await AsyncStorage.setItem('userPhone', user.phone);
-      await AsyncStorage.setItem('userBalance', String(user.balance));
+      if (storedId) setUserId(storedId);
+      if (storedName) setUserName(storedName);
+      if (storedPhone) setUserPhone(storedPhone);
+      if (storedBalance) setBalance(parseFloat(storedBalance) || 0.0);
 
-      setLoading(false);
-      // Replace layout stack to prevent backward navigation into Login
-      router.replace('/dashboard');
-    } catch (error: any) {
-      setLoading(false);
-      const message = error.response?.data?.error || 'Failed to authenticate. Please check your credentials.';
-      Alert.alert('Login Failed', message);
+      if (storedId) {
+        fetchProfileAndBalance(storedId);
+      }
+    } catch (error) {
+      console.error('Error loading stored user details:', error);
     }
   };
 
+  const fetchProfileAndBalance = async (uid: string) => {
+    setLoading(true);
+    try {
+      const response = await api.get(`/auth/profile/${uid}`);
+      if (response.data && response.data.user) {
+        const u = response.data.user;
+        setBalance(u.balance);
+        setUserName(u.fullName);
+        setUserPhone(u.phone);
+
+        // Update local cache
+        await AsyncStorage.setItem('userName', u.fullName);
+        await AsyncStorage.setItem('userPhone', u.phone);
+        await AsyncStorage.setItem('userBalance', String(u.balance));
+      }
+    } catch (error: any) {
+      console.error('Error fetching dashboard state:', error);
+      Alert.alert('Sync Error', 'Failed to retrieve latest balance from server.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadLocalUser();
+  }, []);
+
+  const handleTransfer = async () => {
+    if (!recipientPhone || !transferAmount) {
+      Alert.alert('Input Error', 'Please input both recipient phone number and transfer amount.');
+      return;
+    }
+    const amountFloat = parseFloat(transferAmount);
+    if (isNaN(amountFloat) || amountFloat <= 0) {
+      Alert.alert('Input Error', 'Amount must be greater than zero.');
+      return;
+    }
+    if (amountFloat > balance) {
+      Alert.alert('Funds Check', 'Insufficient wallet balance to perform this operation.');
+      return;
+    }
+
+    setTransferring(true);
+    try {
+      const payload = {
+        sender_phone: userPhone,
+        receiver_phone: recipientPhone.trim(),
+        amount: amountFloat,
+      };
+
+      const response = await api.post('/transfers/', payload);
+      
+      Alert.alert('Success', response.data.message || `Transfer of ${amountFloat} XAF completed.`);
+      
+      // Clear inputs
+      setRecipientPhone('');
+      setTransferAmount('');
+
+      // Refresh balance
+      if (userId) {
+        fetchProfileAndBalance(userId);
+      }
+    } catch (error: any) {
+      console.error('Transfer execution failure:', error);
+      const detail = error.response?.data?.detail || 'P2P Transfer failed. Please try again.';
+      Alert.alert('Transfer Error', detail);
+    } finally {
+      setTransferring(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await AsyncStorage.removeItem('userToken');
+    await AsyncStorage.removeItem('userId');
+    await AsyncStorage.removeItem('userName');
+    await AsyncStorage.removeItem('userPhone');
+    await AsyncStorage.removeItem('userBalance');
+    router.replace('/');
+  };
+
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
-      className="flex-1 bg-slate-50"
-    >
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
-        <View className="flex-1 justify-center items-center p-6">
-          <View className="w-full max-w-sm bg-white rounded-3xl p-8 shadow-xl shadow-slate-100 border border-slate-100">
-            {/* Logo */}
-            <View className="items-center mb-8">
-              <View className="w-16 h-16 bg-blue-600 rounded-2xl items-center justify-center shadow-lg shadow-blue-100 mb-4">
-                <Text className="text-white text-3xl font-extrabold font-mono">X</Text>
+    <SafeAreaView className="flex-1 bg-slate-50">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        className="flex-1"
+      >
+        <ScrollView className="flex-1" contentContainerStyle={{ padding: 24, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+          {/* Header */}
+          <View className="flex-row justify-between items-center mb-6">
+            <View>
+              <Text className="text-2xl font-bold text-slate-800 tracking-tight">ABO Wallet</Text>
+              <Text className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-0.5">
+                Hi, {userName || 'Student'}
+              </Text>
+            </View>
+            <View className="flex-row items-center space-x-3">
+              <TouchableOpacity
+                className="w-10 h-10 bg-white border border-slate-100 rounded-full items-center justify-center active:bg-slate-50 shadow-sm shadow-slate-100 mr-2"
+                onPress={() => userId && fetchProfileAndBalance(userId)}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="#2563eb" />
+                ) : (
+                  <RefreshCw size={16} color="#475569" />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="w-10 h-10 bg-red-50 rounded-full items-center justify-center active:bg-red-100"
+                onPress={handleLogout}
+              >
+                <LogOut size={16} color="#dc2626" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Balance Card */}
+          <View className="bg-blue-600 rounded-3xl p-6 shadow-xl shadow-blue-100 border border-blue-500 mb-6">
+            <Text className="text-blue-100 text-xs font-semibold tracking-wider uppercase mb-1">
+              Available Balance
+            </Text>
+            <Text className="text-white text-3xl font-extrabold my-2">
+              {balance.toLocaleString('en-US', { minimumFractionDigits: 2 })} XAF
+            </Text>
+            <View className="flex-row justify-between items-center mt-3 pt-3 border-t border-blue-500/50">
+              <Text className="text-blue-200 text-xs tracking-tight">
+                Phone Address: {userPhone || 'Not Configured'}
+              </Text>
+              <View className="flex-row items-center">
+                <CreditCard size={12} color="#93c5fd" className="mr-1" />
+                <Text className="text-blue-200 text-[10px] uppercase font-mono">ABO Pay</Text>
               </View>
-              <Text className="text-2xl font-bold text-slate-800 tracking-tight">Student Wallet</Text>
-              <Text className="text-sm text-slate-400 mt-1">Manage your digital funds securely</Text>
+            </View>
+          </View>
+
+          {/* P2P Transfer Section */}
+          <View className="bg-white rounded-3xl p-6 border border-slate-100 shadow-xl shadow-slate-100/50 mb-6">
+            <View className="flex-row items-center mb-4">
+              <View className="w-8 h-8 bg-blue-50 rounded-lg items-center justify-center mr-3">
+                <Send size={16} color="#2563eb" />
+              </View>
+              <View>
+                <Text className="text-lg font-bold text-slate-800">Send Money (P2P)</Text>
+                <Text className="text-xs text-slate-400 mt-0.5">Transfer instantly to ABO phone numbers</Text>
+              </View>
             </View>
 
-            {/* Inputs */}
             <View className="space-y-4">
               <View>
-                <Text className="text-xs font-semibold text-slate-500 mb-1 tracking-wider uppercase">Email Address</Text>
+                <Text className="text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
+                  Recipient Phone
+                </Text>
                 <TextInput
-                  className="w-full h-12 bg-slate-50 rounded-xl px-4 border border-slate-100 text-slate-800"
-                  placeholder="name@school.edu"
+                  className="w-full h-12 bg-slate-50 rounded-xl px-4 border border-slate-100 text-slate-800 text-sm font-medium"
+                  placeholder="+237677123456"
                   placeholderTextColor="#94a3b8"
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  value={email}
-                  onChangeText={setEmail}
+                  keyboardType="phone-pad"
+                  value={recipientPhone}
+                  onChangeText={setRecipientPhone}
                 />
               </View>
 
               <View className="mt-4">
-                <Text className="text-xs font-semibold text-slate-500 mb-1 tracking-wider uppercase">Password</Text>
+                <Text className="text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
+                  Amount (XAF)
+                </Text>
                 <TextInput
-                  className="w-full h-12 bg-slate-50 rounded-xl px-4 border border-slate-100 text-slate-800"
-                  placeholder="••••••••"
+                  className="w-full h-12 bg-slate-50 rounded-xl px-4 border border-slate-100 text-slate-800 text-sm font-medium"
+                  placeholder="5000"
                   placeholderTextColor="#94a3b8"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  value={password}
-                  onChangeText={setPassword}
+                  keyboardType="numeric"
+                  value={transferAmount}
+                  onChangeText={setTransferAmount}
                 />
               </View>
-            </View>
 
-            {/* Action */}
-            <TouchableOpacity 
-              className="w-full h-12 bg-blue-600 rounded-xl items-center justify-center mt-8 active:opacity-90 shadow-md shadow-blue-200"
-              onPress={handleLogin}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <Text className="text-white font-bold text-base">SIGN IN</Text>
-              )}
-            </TouchableOpacity>
-
-            {/* Link to Signup */}
-            <View className="flex-row justify-center mt-6">
-              <Text className="text-slate-400 text-sm">Don't have an account? </Text>
-              <Link href="/signup" asChild>
-                <TouchableOpacity>
-                  <Text className="text-blue-600 font-bold text-sm">Create account</Text>
-                </TouchableOpacity>
-              </Link>
+              <TouchableOpacity
+                className="w-full h-12 bg-blue-600 rounded-xl items-center justify-center mt-6 active:opacity-90 shadow-md shadow-blue-200"
+                onPress={handleTransfer}
+                disabled={transferring}
+              >
+                {transferring ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text className="text-white font-bold text-base">Send Funds</Text>
+                )}
+              </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+
+          {/* Ledger History Link */}
+          <TouchableOpacity
+            className="w-full bg-white border border-slate-200 rounded-2xl py-4 flex-row items-center justify-center active:bg-slate-50 shadow-sm shadow-slate-100"
+            onPress={() => router.push('/history')}
+          >
+            <History size={18} color="#2563eb" className="mr-2" />
+            <Text className="text-blue-600 font-bold text-base ml-1">Statement History</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }

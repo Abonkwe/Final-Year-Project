@@ -26,7 +26,8 @@ class AuthService:
             supabase.table("profiles").insert({
                 "id": user_id,
                 "full_name": payload.full_name,
-                "phone_number": payload.phone_number
+                "phone_number": payload.phone_number,
+                "email": payload.email
             }).execute()
 
             # Connect a brand new local currency wallet to this user account
@@ -72,14 +73,79 @@ class AuthService:
             if not session_res.session:
                 raise Exception("Session token generation failed.")
 
+            user_id = session_res.user.id
+            fullName = ""
+            phone = ""
+            balance = 0.0
+
+            try:
+                profile_res = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
+                profile_data = profile_res.data
+                if profile_data:
+                    fullName = profile_data.get("full_name", "")
+                    phone = profile_data.get("phone_number", "")
+            except Exception as pe:
+                print(f"Error fetching profile details in login: {pe}")
+
+            try:
+                wallet_res = supabase.table("wallets").select("*").eq("user_id", user_id).single().execute()
+                wallet_data = wallet_res.data
+                if wallet_data:
+                    balance = wallet_data.get("balance", 0.0)
+            except Exception as we:
+                print(f"Error fetching wallet details in login: {we}")
+
             return {
                 "status": "success",
                 "access_token": session_res.session.access_token,
-                "token_type": "bearer"
+                "token": session_res.session.access_token,
+                "token_type": "bearer",
+                "user": {
+                    "id": user_id,
+                    "fullName": fullName,
+                    "phone": phone,
+                    "email": payload.email,
+                    "balance": balance
+                }
             }
 
-        except Exception:
+        except Exception as error:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password credentials provided."
+                detail=f"Invalid email or password credentials provided: {str(error)}"
+            )
+
+    @staticmethod
+    def get_user_profile(user_id: str) -> dict:
+        """
+        Retrieves public user profile details and current wallet balance.
+        """
+        try:
+            profile_res = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
+            profile_data = profile_res.data
+            if not profile_data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Public user profile record not found."
+                )
+
+            wallet_res = supabase.table("wallets").select("*").eq("user_id", user_id).single().execute()
+            wallet_data = wallet_res.data
+
+            return {
+                "status": "success",
+                "user": {
+                    "id": user_id,
+                    "fullName": profile_data.get("full_name", ""),
+                    "phone": profile_data.get("phone_number", ""),
+                    "email": profile_data.get("email", ""),
+                    "balance": wallet_data.get("balance", 0.0) if wallet_data else 0.0
+                }
+            }
+        except HTTPException as http_error:
+            raise http_error
+        except Exception as error:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to fetch profile details: {str(error)}"
             )

@@ -27,10 +27,10 @@ export default function SignupScreen() {
     setLoading(true);
     try {
       await api.post('/auth/signup', {
-        fullName: fullName.trim(),
+        full_name: fullName.trim(),
         email: email.trim(),
         password: password,
-        phone: phone.trim(),
+        phone_number: phone.trim(),
       });
 
       setLoading(false);
@@ -57,7 +57,7 @@ export default function SignupScreen() {
             {/* Header */}
             <View className="mb-6">
               <Text className="text-2xl font-bold text-slate-800 tracking-tight">Create Account</Text>
-              <Text className="text-sm text-slate-400 mt-1">Join the Student Digital Wallet platform</Text>
+              <Text className="text-sm text-slate-400 mt-1">Join the ABO Digital Wallet platform</Text>
             </View>
 
             {/* Inputs */}

@@ -60,9 +60,9 @@ export default function LoginScreen() {
             {/* Logo */}
             <View className="items-center mb-8">
               <View className="w-16 h-16 bg-blue-600 rounded-2xl items-center justify-center shadow-lg shadow-blue-100 mb-4">
-                <Text className="text-white text-3xl font-extrabold font-mono">X</Text>
+                <Text className="text-white text-xl font-extrabold font-mono">ABO</Text>
               </View>
-              <Text className="text-2xl font-bold text-slate-800 tracking-tight">Student Wallet</Text>
+              <Text className="text-2xl font-bold text-slate-800 tracking-tight">ABO Wallet</Text>
               <Text className="text-sm text-slate-400 mt-1">Manage your digital funds securely</Text>
             </View>
 

@@ -32,7 +32,21 @@ export default function HistoryScreen() {
       const activeId = storedId || 'student_123';
 
       const response = await api.get(`/transfers/history/${activeId}`);
-      setHistory(response.data);
+      const rawTransactions = response.data.data || [];
+      const mappedHistory = rawTransactions.map((txn: any) => {
+        const isCredit = txn.receiver_id === activeId;
+        return {
+          id: txn.transaction_id,
+          userId: isCredit ? txn.receiver_id : txn.sender_id,
+          type: isCredit ? 'CREDIT' : 'DEBIT',
+          amount: txn.amount,
+          description: isCredit
+            ? `Received Transfer (Fee: ${txn.charges} XAF)`
+            : `Sent Transfer (Fee: ${txn.charges} XAF)`,
+          timestamp: txn.created_at,
+        };
+      });
+      setHistory(mappedHistory);
       setLoading(false);
     } catch (error) {
       setLoading(false);

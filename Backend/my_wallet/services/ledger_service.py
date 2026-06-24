@@ -26,13 +26,25 @@ class LedgerService:
         sender_data = sender.data[0]
 
         # ---------------------------------------------------------------------
-        # STEP 2: ENFORCE THE BALANCE INVARIANT
+        # STEP 2: CALCULATE CHARGES
         # ---------------------------------------------------------------------
-        sender_wallet_id = sender_data["wallets"]["wallet_id"]
-        sender_balance = float(sender_data["wallets"]["balance"])
+        charges: float = payload.amount * 0.02
+
+        # ---------------------------------------------------------------------
+        # STEP 3: ENFORCE THE BALANCE INVARIANT
+        # ---------------------------------------------------------------------
+        sender_wallets = sender_data.get("wallets")
+        if isinstance(sender_wallets, list):
+            if not sender_wallets:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sender wallet not found")
+            sender_wallet_id = sender_wallets[0]["wallet_id"]
+            sender_balance = float(sender_wallets[0]["balance"])
+        else:
+            sender_wallet_id = sender_wallets["wallet_id"]
+            sender_balance = float(sender_wallets["balance"])
 
         # Check total cost (amount + charges) against current available balance
-        if sender_balance < (payload.amount + payload.charges):
+        if sender_balance < (payload.amount + charges):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"The amount you want to send exceeds your current wallet balance\nBalance{sender_balance}"
@@ -50,8 +62,15 @@ class LedgerService:
 
         # Extract the first matching row from the returned data list
         receiver_data = receiver.data[0]
-        receiver_wallet_id = receiver_data["wallets"]["wallet_id"]
-        receiver_balance = float(receiver_data["wallets"]["balance"])
+        receiver_wallets = receiver_data.get("wallets")
+        if isinstance(receiver_wallets, list):
+            if not receiver_wallets:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient wallet not found")
+            receiver_wallet_id = receiver_wallets[0]["wallet_id"]
+            receiver_balance = float(receiver_wallets[0]["balance"])
+        else:
+            receiver_wallet_id = receiver_wallets["wallet_id"]
+            receiver_balance = float(receiver_wallets["balance"])
 
         # ---------------------------------------------------------------------
         # STEP 4: ENFORCE BUSINESS INTEGRITY CHECKS
@@ -62,13 +81,13 @@ class LedgerService:
         # ---------------------------------------------------------------------
         # STEP 5: CALCULATE NEW BALANCES
         # ---------------------------------------------------------------------
-        charges: float = payload.amount * 0.02
         sender_new_balance = sender_balance - (payload.amount + charges)
         receiver_new_balance = receiver_balance + payload.amount
 
         # ---------------------------------------------------------------------
         # STEP 6: ATOMIC LEDGER MUTATION (THE DANGEROUS ZONE)
         # ---------------------------------------------------------------------
+        sender_deducted = False
         try:
             # A. Log the initial transaction row as PENDING
             txn_res = supabase.table("transactions").insert({
@@ -83,6 +102,7 @@ class LedgerService:
 
             # B. Deduct money from the Sender's wallet
             supabase.table("wallets").update({"balance": sender_new_balance}).eq("wallet_id", sender_wallet_id).execute()
+            sender_deducted = True
 
             # C. Credit money to the Receiver's wallet
             supabase.table("wallets").update({"balance": receiver_new_balance}).eq("wallet_id", receiver_wallet_id).execute()
@@ -101,8 +121,15 @@ class LedgerService:
             # ---------------------------------------------------------------------
             # STEP 7: CLEANUP ON ERROR
             # ---------------------------------------------------------------------
+            if sender_deducted:
+                try:
+                    # Roll back the sender's balance if the receiver credit or status commit failed
+                    supabase.table("wallets").update({"balance": sender_balance}).eq("wallet_id", sender_wallet_id).execute()
+                except Exception:
+                    pass  # Prevent rollback errors from masking the original database error
+
             if 'transaction_id' in locals():
-                supabase.table("transactions").update({"status": "FAILED"}).eq("id", transaction_id).execute()
+                supabase.table("transactions").update({"status": "FAILED"}).eq("transaction_id", transaction_id).execute()
 
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -120,7 +147,7 @@ class LedgerService:
             response = supabase.table("transactions") \
                 .select("*") \
                 .or_(f"sender_id.eq.{user_id},receiver_id.eq.{user_id}") \
-                .order("created_at", descending=True) \
+                .order("created_at", desc=True) \
                 .execute()
 
             return response.data

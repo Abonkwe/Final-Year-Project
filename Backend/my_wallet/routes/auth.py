@@ -35,3 +35,16 @@ def login_user(new_user: UserLoginRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred during login routing: {str(general_error)}"
         )
+
+@router.get("/profile/{user_id}", status_code=status.HTTP_200_OK)
+def get_user_profile(user_id: str):
+    try:
+        result = AuthService.get_user_profile(user_id)
+        return result
+    except HTTPException as http_error:
+        raise http_error
+    except Exception as general_error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred while routing profile extraction: {str(general_error)}"
+        )

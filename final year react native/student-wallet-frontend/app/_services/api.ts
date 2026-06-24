@@ -2,9 +2,9 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Axios client module instance targeting the student wallet backend
+// Axios client module instance targeting the ABO wallet backend
 const api = axios.create({
-  baseURL: 'http://127.0.0.1:8000/wallet_api/v1',
+  baseURL: 'http://192.168.0.106:8000/wallet_api/v1',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
