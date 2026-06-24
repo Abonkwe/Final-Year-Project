@@ -27,3 +27,22 @@ def initiate_p2p_transfer(payload: P2PTransferRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred during routing execution: {str(general_error)}"
         )
+
+
+@router.get("/history/{user_id}", status_code=status.HTTP_200_OK)
+def fetch_history(user_id: str):
+    """
+    HTTP Endpoint: Retrieves a chronological log of financial actions for a specific profile.
+    """
+    try:
+        # Call it directly from LedgerService now!
+        history = LedgerService.get_user_transaction_history(user_id)
+        return {"status": "success", "count": len(history), "data": history}
+
+    except HTTPException as http_error:
+        raise http_error
+    except Exception as general_error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while routing history extraction: {str(general_error)}"
+        )
