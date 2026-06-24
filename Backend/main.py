@@ -5,7 +5,7 @@ from my_wallet.routes.transfers import router as transfers_router
 from my_wallet.routes.auth import router as auth_router
 
 app = FastAPI(
-    title="Digital Payment and Wallet System Backend API",
+    title="Digital Payment and Wallet System Backend API for ABO Wallet",
     description="Backend logic tier coordinating ledger entries, user profiles, and wallets via Supabase.",
     version="1.0.0"
 )
@@ -26,9 +26,6 @@ app.include_router(transfers_router, prefix="/wallet_api/v1")
 app.include_router(auth_router, prefix="/wallet_api/v1")
 
 
-# ---------------------------------------------------------------------
-# STEP 4: CREATE A BASE SYSTEM HEALTH CHECK ENDPOINT
-# ---------------------------------------------------------------------
 # @app.get("/", tags=["Health"])
 # def system_health_check():
 #     """

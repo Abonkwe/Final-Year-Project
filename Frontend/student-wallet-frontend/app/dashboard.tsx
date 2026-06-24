@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -16,7 +14,10 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { LogOut, Send, RefreshCw, History, CreditCard } from 'lucide-react-native';
+import NetInfo from '@react-native-community/netinfo';
 import api from './_services/api';
+import { getLocalProfile, saveLocalProfile, queueOfflineTransfer } from './_services/db';
+import { setupNetworkSyncListener, syncPendingTransfers } from './_services/sync';
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -32,24 +33,37 @@ export default function DashboardScreen() {
   const loadLocalUser = async () => {
     try {
       const storedId = await AsyncStorage.getItem('userId');
-      const storedName = await AsyncStorage.getItem('userName');
-      const storedPhone = await AsyncStorage.getItem('userPhone');
-      const storedBalance = await AsyncStorage.getItem('userBalance');
+      if (!storedId) return;
+      setUserId(storedId);
 
-      if (storedId) setUserId(storedId);
-      if (storedName) setUserName(storedName);
-      if (storedPhone) setUserPhone(storedPhone);
-      if (storedBalance) setBalance(parseFloat(storedBalance) || 0.0);
+      // 1. Instant Rendering: Priority on SQLite Cache
+      const cachedProfile = await getLocalProfile(storedId);
+      if (cachedProfile) {
+        setUserName(cachedProfile.fullName);
+        setUserPhone(cachedProfile.phone);
+        setBalance(cachedProfile.balance);
+      } else {
+        // Fallback to AsyncStorage cache
+        const storedName = await AsyncStorage.getItem('userName');
+        const storedPhone = await AsyncStorage.getItem('userPhone');
+        const storedBalance = await AsyncStorage.getItem('userBalance');
 
-      if (storedId) {
-        fetchProfileAndBalance(storedId);
+        if (storedName) setUserName(storedName);
+        if (storedPhone) setUserPhone(storedPhone);
+        if (storedBalance) setBalance(parseFloat(storedBalance) || 0.0);
       }
+
+      // 2. Synchronize any pending transactions in the background first
+      await syncPendingTransfers(storedId);
+
+      // 3. Background Sync: Fetch fresh data from backend
+      fetchProfileAndBalance(storedId);
     } catch (error) {
       console.error('Error loading stored user details:', error);
     }
   };
 
-  const fetchProfileAndBalance = async (uid: string) => {
+  const fetchProfileAndBalance = async (uid: string, isManualRefresh = false) => {
     setLoading(true);
     try {
       const response = await api.get(`/auth/profile/${uid}`);
@@ -59,14 +73,26 @@ export default function DashboardScreen() {
         setUserName(u.fullName);
         setUserPhone(u.phone);
 
-        // Update local cache
+        // Update local SQLite Cache
+        await saveLocalProfile({
+          id: uid,
+          email: u.email || '',
+          fullName: u.fullName,
+          phone: u.phone,
+          balance: u.balance,
+        });
+
+        // Sync to AsyncStorage
         await AsyncStorage.setItem('userName', u.fullName);
         await AsyncStorage.setItem('userPhone', u.phone);
         await AsyncStorage.setItem('userBalance', String(u.balance));
       }
     } catch (error: any) {
       console.error('Error fetching dashboard state:', error);
-      Alert.alert('Sync Error', 'Failed to retrieve latest balance from server.');
+      // Suppress connection popups and use SQLite silently, alert only if manual refresh
+      if (isManualRefresh) {
+        Alert.alert('Sync Connection Error', 'Failed to retrieve latest balance from server. Using local cache.');
+      }
     } finally {
       setLoading(false);
     }
@@ -74,7 +100,50 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     loadLocalUser();
+
+    // Hook network listener for background sync when connection regains
+    let unsubscribe: (() => void) | undefined;
+    AsyncStorage.getItem('userId').then((uid) => {
+      if (uid) {
+        unsubscribe = setupNetworkSyncListener(uid, () => {
+          fetchProfileAndBalance(uid);
+        });
+      }
+    });
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, []);
+
+  const handleOfflineTransfer = async (amountFloat: number) => {
+    try {
+      const tempId = `pending_${Date.now()}`;
+      await queueOfflineTransfer({
+        tempId,
+        userId,
+        senderPhone: userPhone,
+        receiverPhone: recipientPhone.trim(),
+        amount: amountFloat,
+      });
+
+      // Update UI balance immediately
+      setBalance((prev) => prev - amountFloat);
+
+      Alert.alert(
+        'Offline Mode',
+        `No network connection. Transfer of ${amountFloat} XAF has been queued locally and will be processed once connection is restored.`
+      );
+
+      setRecipientPhone('');
+      setTransferAmount('');
+    } catch (err) {
+      console.error('Failed to queue offline transfer:', err);
+      Alert.alert('Local Error', 'Could not cache transaction locally. Please check your storage.');
+    }
+  };
 
   const handleTransfer = async () => {
     if (!recipientPhone || !transferAmount) {
@@ -92,6 +161,23 @@ export default function DashboardScreen() {
     }
 
     setTransferring(true);
+
+    // Verify network connectivity
+    let isConnected = false;
+    try {
+      const netState = await NetInfo.fetch();
+      isConnected = !!(netState.isConnected && netState.isInternetReachable !== false);
+    } catch (e) {
+      isConnected = false;
+    }
+
+    if (!isConnected) {
+      await handleOfflineTransfer(amountFloat);
+      setTransferring(false);
+      return;
+    }
+
+    // Process remote transfer
     try {
       const payload = {
         sender_phone: userPhone,
@@ -107,14 +193,21 @@ export default function DashboardScreen() {
       setRecipientPhone('');
       setTransferAmount('');
 
-      // Refresh balance
+      // Refresh balance and cache
       if (userId) {
         fetchProfileAndBalance(userId);
       }
     } catch (error: any) {
       console.error('Transfer execution failure:', error);
-      const detail = error.response?.data?.detail || 'P2P Transfer failed. Please try again.';
-      Alert.alert('Transfer Error', detail);
+      
+      // If it failed because of a network timeout or API server disconnect (rather than a 400/404 rejection)
+      const isNetworkError = !error.response;
+      if (isNetworkError) {
+        await handleOfflineTransfer(amountFloat);
+      } else {
+        const detail = error.response?.data?.detail || 'P2P Transfer failed. Please try again.';
+        Alert.alert('Transfer Error', detail);
+      }
     } finally {
       setTransferring(false);
     }
@@ -130,7 +223,7 @@ export default function DashboardScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50">
+    <SafeAreaView className="flex-1 bg-slate-50 pt-10">
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
@@ -147,7 +240,7 @@ export default function DashboardScreen() {
             <View className="flex-row items-center space-x-3">
               <TouchableOpacity
                 className="w-10 h-10 bg-white border border-slate-100 rounded-full items-center justify-center active:bg-slate-50 shadow-sm shadow-slate-100 mr-2"
-                onPress={() => userId && fetchProfileAndBalance(userId)}
+                onPress={() => userId && fetchProfileAndBalance(userId, true)}
                 disabled={loading}
               >
                 {loading ? (
